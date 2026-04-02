@@ -1,114 +1,190 @@
-const express = require('express');
+import express from 'express';
+import supabase from '../config/supabase.js';
+import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
+
 const router = express.Router();
-const db = require('../config/db');
-const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 
-// GET /api/products - Get all products (with optional category filter & search)
+/* ───────────────────────────────
+   GET ALL PRODUCTS
+─────────────────────────────── */
 router.get('/', async (req, res) => {
-  const { category, search, page = 1, limit = 12 } = req.query;
-  const offset = (page - 1) * limit;
-
-  let query = `
-    SELECT p.*, c.name as category_name 
-    FROM products p 
-    LEFT JOIN categories c ON p.category_id = c.id 
-    WHERE 1=1
-  `;
-  const params = [];
-
-  if (category) {
-    query += ' AND p.category_id = ?';
-    params.push(category);
-  }
-  if (search) {
-    query += ' AND (p.name LIKE ? OR p.description LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`);
-  }
-
-  const countQuery = query.replace('SELECT p.*, c.name as category_name', 'SELECT COUNT(*) as total');
-  query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
-  params.push(parseInt(limit), parseInt(offset));
-
   try {
-    const [products] = await db.query(query, params);
-    const [countResult] = await db.query(countQuery, params.slice(0, -2));
-    res.json({ products, total: countResult[0].total, page: parseInt(page), limit: parseInt(limit) });
+    const {
+      category,
+      search,
+      page = 1,
+      limit = 12
+    } = req.query;
+
+    let query = supabase
+      .from('products')
+      .select('*, categories(name)', { count: 'exact' })
+      .order('created_at', { ascending: false });
+
+    // Pagination
+    const from = (parseInt(page) - 1) * parseInt(limit);
+    const to = from + parseInt(limit) - 1;
+
+    query = query.range(from, to);
+
+    if (category) {
+      query = query.eq('category_id', category);
+    }
+
+    if (search) {
+      query = query.or(
+        `name.ilike.%${search}%,description.ilike.%${search}%`
+      );
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) throw error;
+
+    res.json({
+      products: data,
+      total: count,
+      page: parseInt(page),
+      limit: parseInt(limit),
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
-// GET /api/products/featured - Get featured products
+/* ───────────────────────────────
+   FEATURED PRODUCTS
+─────────────────────────────── */
 router.get('/featured', async (req, res) => {
   try {
-    const [products] = await db.query(`
-      SELECT p.*, c.name as category_name 
-      FROM products p 
-      LEFT JOIN categories c ON p.category_id = c.id 
-      ORDER BY p.created_at DESC LIMIT 8
-    `);
-    res.json(products);
+    const { data, error } = await supabase
+      .from('products')
+      .select('*, categories(name)')
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    if (error) throw error;
+
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
-// GET /api/products/:id - Get single product
+/* ───────────────────────────────
+   GET SINGLE PRODUCT
+─────────────────────────────── */
 router.get('/:id', async (req, res) => {
   try {
-    const [products] = await db.query(`
-      SELECT p.*, c.name as category_name 
-      FROM products p 
-      LEFT JOIN categories c ON p.category_id = c.id 
-      WHERE p.id = ?
-    `, [req.params.id]);
-    if (products.length === 0)
+    const { data, error } = await supabase
+      .from('products')
+      .select('*, categories(name)')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error) {
       return res.status(404).json({ message: 'Product not found' });
-    res.json(products[0]);
+    }
+
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
-// POST /api/products - Create product (admin only)
+/* ───────────────────────────────
+   CREATE PRODUCT (Admin)
+─────────────────────────────── */
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
-  const { name, description, price, stock, image_url, category_id } = req.body;
-  if (!name || !price)
-    return res.status(400).json({ message: 'Name and price required' });
-
   try {
-    const [result] = await db.query(
-      'INSERT INTO products (name, description, price, stock, image_url, category_id) VALUES (?, ?, ?, ?, ?, ?)',
-      [name, description, price, stock || 0, image_url, category_id]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Product created' });
+    const {
+      name,
+      description,
+      price,
+      stock,
+      image_url,
+      category_id
+    } = req.body;
+
+    if (!name || !price) {
+      return res.status(400).json({
+        message: 'Name and price required',
+      });
+    }
+
+    const { data, error } = await supabase
+      .from('products')
+      .insert([
+        {
+          name,
+          description,
+          price,
+          stock,
+          image_url,
+          category_id,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json(data);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
-// PUT /api/products/:id - Update product (admin only)
+/* ───────────────────────────────
+   UPDATE PRODUCT (Admin)
+─────────────────────────────── */
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
-  const { name, description, price, stock, image_url, category_id } = req.body;
   try {
-    await db.query(
-      'UPDATE products SET name=?, description=?, price=?, stock=?, image_url=?, category_id=? WHERE id=?',
-      [name, description, price, stock, image_url, category_id, req.params.id]
-    );
+    const {
+      name,
+      description,
+      price,
+      stock,
+      image_url,
+      category_id
+    } = req.body;
+
+    const { error } = await supabase
+      .from('products')
+      .update({
+        name,
+        description,
+        price,
+        stock,
+        image_url,
+        category_id,
+      })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
     res.json({ message: 'Product updated' });
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
-// DELETE /api/products/:id - Delete product (admin only)
+/* ───────────────────────────────
+   DELETE PRODUCT (Admin)
+─────────────────────────────── */
 router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    await db.query('DELETE FROM products WHERE id = ?', [req.params.id]);
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
     res.json({ message: 'Product deleted' });
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
-module.exports = router;
+export default router;

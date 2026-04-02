@@ -1,8 +1,3 @@
--- E-Commerce Database Schema
--- Run this file to set up the database
-
-CREATE DATABASE IF NOT EXISTS ecommerce_db;
-USE ecommerce_db;
 
 -- Users Table
 CREATE TABLE IF NOT EXISTS users (

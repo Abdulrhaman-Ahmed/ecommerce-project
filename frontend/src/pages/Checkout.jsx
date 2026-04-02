@@ -26,32 +26,14 @@ const Checkout = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (items.length === 0) return toast.error('Your cart is empty!');
-
     if (!user) {
       toast.error('Please log in to place your order.');
       navigate('/login');
       return;
     }
-
-    if (
-      !form.name ||
-      !form.email ||
-      !form.phone ||
-      !form.address ||
-      !form.city
-    )
+    if (!form.name || !form.email || !form.phone || !form.address || !form.city)
       return toast.error('Please fill in all required fields.');
-
-    // ── Guard: make sure every cart item has the required fields ────────────
-    const invalidItem = items.find(
-      (i) => !i.id || i.price == null || i.quantity == null
-    );
-    if (invalidItem) {
-      toast.error('One or more cart items are invalid. Please refresh.');
-      return;
-    }
 
     setLoading(true);
     try {
@@ -63,18 +45,13 @@ const Checkout = () => {
         })),
         shipping: form,
         totalPrice: grandTotal,
+        userId: user.id,
       });
-
       dispatch({ type: 'CLEAR_CART' });
       toast.success('🎉 Order placed successfully!');
       navigate('/order-success', { state: { orderId: res.data.orderId } });
     } catch (err) {
-      // Show the exact message returned by the backend
-      const msg =
-        err.response?.data?.message ||
-        'Failed to place order. Please try again.';
-      toast.error(msg);
-      console.error('Place order error:', err.response?.data);
+      toast.error(err.response?.data?.message || 'Failed to place order.');
     } finally {
       setLoading(false);
     }

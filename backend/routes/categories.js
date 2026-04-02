@@ -1,15 +1,22 @@
-const express = require('express');
+import express from 'express';
+import supabase from '../config/supabase.js';
+
 const router = express.Router();
-const db = require('../config/db');
 
 // GET /api/categories
 router.get('/', async (req, res) => {
   try {
-    const [categories] = await db.query('SELECT * FROM categories ORDER BY name');
+    const { data: categories, error } = await supabase
+      .from('categories')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+
     res.json(categories);
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
-module.exports = router;
+export default router;
