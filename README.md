@@ -9,7 +9,7 @@
 ecommerce/
 ├── backend/               ← Node.js + Express + MySQL
 │   ├── config/
-│   │   └── db.js          ← MySQL connection pool
+│   │   └── supabase.js       ← MySQL connection pool
 │   ├── middleware/
 │   │   └── auth.js        ← JWT auth + admin guard
 │   ├── routes/
